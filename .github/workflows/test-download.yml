@@ -1,0 +1,20 @@
+name: Test download MIMIT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica i file
+        run: |
+          curl -L -f -A "Mozilla/5.0" -o anagrafica.csv "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv"
+          curl -L -f -A "Mozilla/5.0" -o prezzi.csv "https://www.mimit.gov.it/images/exportCSV/prezzo_alle_8.csv"
+      - name: Mostra le prime righe
+        run: |
+          ls -lh anagrafica.csv prezzi.csv
+          echo "--- ANAGRAFICA ---"
+          head -n 4 anagrafica.csv
+          echo "--- PREZZI ---"
+          head -n 4 prezzi.csv
