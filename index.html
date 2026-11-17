@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distributori IP - prezzi e percorsi</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ipBlue: '#0f2b5c',
+            ipBlueDark: '#081a3a',
+            ipBlueLight: '#1d428a',
+            ipYellow: '#ffcc00',
+            ipYellowHover: '#e6b800',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Leaflet Marker Pulsing Animation */
+    .user-location-marker {
+      background: #2563eb;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 15px rgba(37, 99, 235, 0.6);
+      animation: pulse-ring 2s infinite;
+    }
+    @keyframes pulse-ring {
+      0% {
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+      }
+      70% {
+        box-shadow: 0 0 0 12px rgba(37, 99, 235, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+      }
+    }
+
+    /* Leaflet Popup Styling */
+    .leaflet-popup-content-wrapper {
+      border-radius: 12px;
+      padding: 0;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    }
+    .leaflet-popup-content {
+      margin: 0;
+      width: 280px !important;
+    }
+    .leaflet-container {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 h-screen flex flex-col overflow-hidden text-slate-800">
+
+  <!-- TOP HEADER -->
+  <header class="bg-ipBlue text-white shadow-md z-30 flex-shrink-0">
+    <div class="px-4 py-3 flex items-center justify-between">
+      <!-- Logo & Title -->
+      <div class="flex items-center space-x-3">
+        <div class="bg-ipYellow text-ipBlue font-black text-xl px-2.5 py-1 rounded-md tracking-wider flex items-center shadow-inner"><i class="fa-solid fa-gas-pump"></i></div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight flex items-center">
+            Distributori IP
+            <span id="data-agg" class="ml-2 bg-ipYellow text-ipBlue text-[10px] font-extrabold px-1.5 py-0.5 rounded">Prezzi del ...</span>
+          </h1>
+          <p class="text-xs text-slate-300 hidden sm:block">Prezzi carburanti (dati MIMIT)</p>
+        </div>
+      </div>
+
+      <!-- Quick Actions / Presentation Info -->
+      <div class="flex items-center space-x-2">
+        <button onclick="openDemoInfo()" class="bg-white/10 hover:bg-white/20 text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1">
+          <i class="fa-solid fa-circle-info text-ipYellow"></i>
+          <span class="hidden md:inline">Info</span>
+        </button>
+        
+      </div>
+    </div>
+
+    <!-- KPI STRIP -->
+    <div class="bg-ipBlueDark border-t border-slate-700/50 px-4 py-2 grid grid-cols-3 gap-2 text-center text-xs">
+      <div class="border-r border-slate-700/50 pr-2">
+        <span class="text-slate-400 block text-[10px] uppercase tracking-wider">Stazioni Trovate</span>
+        <span id="kpi-count" class="font-bold text-ipYellow text-base">0</span>
+      </div>
+      <div class="border-r border-slate-700/50 px-2">
+        <span class="text-slate-400 block text-[10px] uppercase tracking-wider">Media Benzina</span>
+        <span id="kpi-benzina" class="font-bold text-white text-base">1.849 €</span>
+      </div>
+      <div>
+        <span class="text-slate-400 block text-[10px] uppercase tracking-wider">Media Diesel</span>
+        <span id="kpi-diesel" class="font-bold text-white text-base">1.739 €</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <div class="flex-1 flex flex-col md:flex-row relative overflow-hidden">
+    
+    <!-- MOBILE VIEW TOGGLE BAR -->
+    <div class="md:hidden bg-slate-200 border-b border-slate-300 flex text-xs font-semibold text-slate-600 z-20">
+      <button id="btn-tab-list" onclick="switchMobileTab('list')" class="flex-1 py-2.5 text-center bg-white text-ipBlue border-b-2 border-ipBlue flex justify-center items-center gap-1.5">
+        <i class="fa-solid fa-list-ul"></i> Elenco Stazioni (<span id="mobile-count">0</span>)
+      </button>
+      <button id="btn-tab-map" onclick="switchMobileTab('map')" class="flex-1 py-2.5 text-center flex justify-center items-center gap-1.5">
+        <i class="fa-solid fa-map-location-dot"></i> Mappa Interattiva
+      </button>
+    </div>
+
+    <!-- SIDEBAR: SEARCH & STATIONS LIST -->
+    <aside id="sidebar" class="w-full md:w-[420px] lg:w-[460px] bg-white flex flex-col h-full shadow-lg z-20 border-r border-slate-200">
+      
+      <!-- SEARCH TABS -->
+      <div class="p-4 bg-slate-50 border-b border-slate-200">
+        <div class="flex bg-slate-200/80 p-1 rounded-xl gap-1 text-xs font-medium">
+          <button id="tab-near" onclick="setSearchTab('near')" class="flex-1 py-2 rounded-lg font-semibold bg-ipBlue text-white shadow-sm transition flex items-center justify-center gap-1">
+            <i class="fa-solid fa-location-crosshairs text-ipYellow"></i> Vicino a me
+          </button>
+          <button id="tab-route" onclick="setSearchTab('route')" class="flex-1 py-2 rounded-lg text-slate-700 hover:text-ipBlue transition flex items-center justify-center gap-1">
+            <i class="fa-solid fa-route"></i> Sul Tragitto
+          </button>
+          <button id="tab-city" onclick="setSearchTab('city')" class="flex-1 py-2 rounded-lg text-slate-700 hover:text-ipBlue transition flex items-center justify-center gap-1">
+            <i class="fa-solid fa-magnifying-glass"></i> Per Città
+          </button>
+        </div>
+
+        <!-- TAB CONTENT 1: VICINO A ME -->
+        <div id="panel-near" class="mt-3 space-y-2">
+          <button onclick="getUserLocation()" class="w-full bg-ipYellow hover:bg-ipYellowHover text-ipBlue font-bold py-2.5 px-4 rounded-xl shadow-sm transition flex items-center justify-center gap-2 text-sm">
+            <i class="fa-solid fa-crosshairs text-base"></i> Rileva la mia Posizione
+          </button>
+          <p class="text-[11px] text-slate-500 text-center">Mostra le stazioni IP entro il raggio selezionato.</p>
+        </div>
+
+        <!-- TAB CONTENT 2: TRAGITTO (ORIGINE - DESTINAZIONE) -->
+        <div id="panel-route" class="mt-3 space-y-2 hidden">
+          <div class="relative">
+            <i class="fa-solid fa-circle-dot text-emerald-500 absolute left-3 top-3 text-xs"></i>
+            <input type="text" id="route-start" placeholder="Partenza (es. Roma, Milano)" value="Roma" class="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ipBlue">
+          </div>
+          <div class="relative">
+            <i class="fa-solid fa-location-dot text-rose-500 absolute left-3 top-3 text-xs"></i>
+            <input type="text" id="route-end" placeholder="Arrivo (es. Firenze, Bologna)" value="Firenze" class="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ipBlue">
+          </div>
+          <button onclick="calculateRouteSearch()" class="w-full bg-ipBlue hover:bg-ipBlueLight text-white font-bold py-2 px-4 rounded-lg text-xs shadow-sm transition flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-arrows-split-up-and-left text-ipYellow"></i> Calcola Stazioni sul Percorso
+          </button>
+        </div>
+
+        <!-- TAB CONTENT 3: RICERCA PER CITTA' -->
+        <div id="panel-city" class="mt-3 space-y-2 hidden">
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <i class="fa-solid fa-city absolute left-3 top-3 text-slate-400 text-xs"></i>
+              <input type="text" id="city-input" placeholder="Cerca comune o CAP (es. Milano, 00100)" class="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ipBlue">
+            </div>
+            <button onclick="searchByCity()" class="bg-ipBlue hover:bg-ipBlueLight text-white px-4 py-2 rounded-lg text-xs font-semibold transition">
+              Cerca
+            </button>
+          </div>
+        </div>
+
+        <!-- ADVANCED FILTER TOGGLE & PANEL -->
+        <div class="mt-3 pt-3 border-t border-slate-200">
+          <div class="flex items-center justify-between text-xs font-semibold text-slate-700 cursor-pointer" onclick="toggleFilters()">
+            <span class="flex items-center gap-1.5">
+              <i class="fa-solid fa-sliders text-ipBlue"></i> Filtri Carburanti e Servizi
+            </span>
+            <i id="filter-chevron" class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform duration-200"></i>
+          </div>
+
+          <div id="filter-box" class="mt-2 space-y-3 hidden">
+            <!-- Tipo Carburante -->
+            <div>
+              <label class="block text-[11px] font-medium text-slate-500 mb-1">Carburante Richiesto</label>
+              <div class="grid grid-cols-3 gap-1 text-[11px]">
+                <button type="button" onclick="setFuelFilter('all')" class="fuel-btn active border border-ipBlue bg-ipBlue text-white py-1 rounded-md text-center">Tutti</button>
+                <button type="button" onclick="setFuelFilter('benzina')" class="fuel-btn border border-slate-300 py-1 rounded-md text-center hover:bg-slate-100">Benzina</button>
+                <button type="button" onclick="setFuelFilter('diesel')" class="fuel-btn border border-slate-300 py-1 rounded-md text-center hover:bg-slate-100">Diesel</button>
+                <button type="button" onclick="setFuelFilter('gpl')" class="fuel-btn border border-slate-300 py-1 rounded-md text-center hover:bg-slate-100">GPL</button>
+                <button type="button" onclick="setFuelFilter('metano')" class="fuel-btn border border-slate-300 py-1 rounded-md text-center hover:bg-slate-100">Metano</button>
+                <button type="button" onclick="setFuelFilter('charge')" class="fuel-btn border border-slate-300 py-1 rounded-md text-center hover:bg-slate-100 flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-bolt text-amber-500"></i> IP Charge
+                </button>
+              </div>
+            </div>
+
+            <!-- Modalità Erogazione -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-medium text-slate-500 mb-1">Erogazione</label>
+                <select id="select-mode" onchange="applyFilters()" class="w-full text-xs bg-white border border-slate-300 rounded-md p-1.5 focus:ring-1 focus:ring-ipBlue">
+                  <option value="all">Tutte le modalità</option>
+                  <option value="self">Solo Self Service</option>
+                  <option value="servito">Solo Servito</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-medium text-slate-500 mb-1">Ordinamento</label>
+                <select id="select-sort" onchange="applyFilters()" class="w-full text-xs bg-white border border-slate-300 rounded-md p-1.5 focus:ring-1 focus:ring-ipBlue">
+                  <option value="distance">Distanza più vicina</option>
+                  <option value="price_benzina">Prezzo Benzina più basso</option>
+                  <option value="price_diesel">Prezzo Diesel più basso</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Slider Raggio -->
+            <div>
+              <div class="flex justify-between text-[11px] font-medium text-slate-500 mb-1">
+                <span>Raggio massimo di ricerca:</span>
+                <span id="radius-val" class="font-bold text-ipBlue">10 km</span>
+              </div>
+              <input type="range" id="radius-slider" min="1" max="50" value="10" oninput="updateRadiusLabel(this.value)" onchange="applyFilters()" class="w-full accent-ipBlue h-1.5 bg-slate-200 rounded-lg cursor-pointer">
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- STATIONS LIST -->
+      <div id="list-container" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <!-- Station Cards render dynamically here -->
+      </div>
+
+    </aside>
+
+    <!-- MAP CONTAINER -->
+    <main id="map-container" class="flex-1 h-full relative bg-slate-200">
+      <div id="map" class="w-full h-full z-10"></div>
+
+      <!-- MAP FLOATING CONTROLS -->
+      <div class="absolute top-4 right-4 z-20 flex flex-col gap-2">
+        <button onclick="recenterMap()" title="Ricentra Posizione" class="bg-white hover:bg-slate-50 text-slate-700 w-10 h-10 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition">
+          <i class="fa-solid fa-location-crosshairs text-ipBlue text-base"></i>
+        </button>
+        <button onclick="toggleRouteBufferVisual()" id="btn-toggle-buffer" title="Mostra/Nascondi Area Percorso" class="bg-white hover:bg-slate-50 text-slate-700 w-10 h-10 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition hidden">
+          <i class="fa-solid fa-draw-polygon text-emerald-600 text-base"></i>
+        </button>
+      </div>
+
+      <!-- MAP LEGEND -->
+      <div class="absolute bottom-5 right-5 z-20 bg-white/95 backdrop-blur-sm p-2.5 rounded-xl shadow-lg border border-slate-200 text-[11px] hidden sm:block">
+        <div class="font-bold text-slate-700 mb-1.5 border-b pb-1">Legenda Stazioni IP</div>
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-ipBlue inline-block border border-ipYellow"></span>
+            <span>Distributore IP Standard</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-amber-500 inline-block border border-white"></span>
+            <span>IP Charge (Con Colonnina EV)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-600 inline-block border border-white"></span>
+            <span>IP Stazione Autostradale / H24</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- DEMO INFO MODAL -->
+  <div id="demo-modal" class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 hidden backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+      <button onclick="closeDemoInfo()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="bg-ipYellow text-ipBlue font-black text-xl px-3 py-1 rounded-md"><i class="fa-solid fa-gas-pump"></i></div>
+        <div>
+          <h3 class="font-bold text-slate-800 text-base">Come funziona</h3>
+          <p class="text-xs text-slate-500">Dati MIMIT</p>
+        </div>
+      </div>
+
+      <div class="space-y-3 text-xs text-slate-600">
+        <p>Trova gli impianti IP più convenienti vicino a te, in una città o lungo un percorso.</p>
+        <ul class="list-disc pl-4 space-y-1 text-slate-700">
+          <li><strong>Prezzi:</strong> dati aperti del MIMIT, aggiornati ogni giorno. Sono i prezzi in vigore alle 8 del giorno precedente.</li>
+          <li><strong>Percorso:</strong> mostra le stazioni entro 15 km dal tragitto.</li>
+          <li><strong>Navigazione:</strong> il pulsante apre Google Maps. La tua posizione resta sul telefono.</li>
+        </ul>
+        <div class="bg-slate-100 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-600">
+          <i class="fa-solid fa-lightbulb text-ipYellow mr-1 font-bold"></i>
+          <strong>Suggerimento Prova:</strong> Prova a cercare il percorso da <em>"Roma"</em> a <em>"Firenze"</em> o da <em>"Milano"</em> a <em>"Bologna"</em> per osservare l'effetto del filtraggio sul tragitto!
+        </div>
+      </div>
+
+      <button onclick="closeDemoInfo()" class="mt-5 w-full bg-ipBlue hover:bg-ipBlueLight text-white font-bold py-2.5 rounded-xl text-xs transition">
+        Ho capito
+      </button>
+    </div>
+  </div>
+
+
+  <!-- APPLICATION JAVASCRIPT LOGIC -->
+  <script>
+    // --- DATI: letti da stazioni.json (aggiornato ogni giorno) ---
+    let rawStations = [];
+
+    function esc(t) {
+      return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // Converte una stazione di stazioni.json nel formato usato dalla pagina.
+    // Per ogni carburante mostra il prezzo self se c'è, altrimenti il servito.
+    function adattaStazione(s) {
+      const prezzo = (k) => { const v = s.pr[k]; return v ? (v[0] != null ? v[0] : v[1]) : null; };
+      const haSelf = Object.values(s.pr).some(v => v[0] != null);
+      return {
+        id: String(s.id),
+        name: esc(s.n || ('IP ' + s.c)),
+        address: esc(s.a + ', ' + s.c + (s.p ? ' (' + s.p + ')' : '')),
+        city: s.c,
+        lat: s.la,
+        lng: s.lo,
+        highway: /autostrad/i.test(s.a || ''),
+        prices: { benzina: prezzo('benzina'), diesel: prezzo('gasolio'), gpl: prezzo('gpl'), metano: prezzo('metano') },
+        services: [],
+        mode: haSelf ? 'self' : 'servito',
+        isCharge: false
+      };
+    }
+
+    async function caricaDati() {
+      const r = await fetch('stazioni.json', { cache: 'no-cache' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      rawStations = d.stazioni.map(adattaStazione);
+      const el = document.getElementById('data-agg');
+      if (el && d.aggiornato) {
+        const p = d.aggiornato.split('-');
+        el.innerText = 'Prezzi del ' + p[2] + '/' + p[1] + '/' + p[0];
+      }
+    }
+
+    // --- STATE VARIABLES ---
+    let map = null;
+    let markersGroup = null;
+    let routePolyline = null;
+    let userMarker = null;
+    let activeFuel = 'all';
+    let currentSearchTab = 'near';
+    let userCoords = { lat: 41.9028, lng: 12.4964 }; // Default: Roma Centro
+    let displayedStations = [];
+
+    // --- INITIALIZATION ---
+    window.onload = async function() {
+      initMap();
+      try {
+        await caricaDati();
+      } catch (e) {
+        alert("Impossibile caricare i dati dei distributori. Riprova più tardi.");
+        return;
+      }
+      applyFilters();
+      getUserLocation(true);
+    };
+
+    // --- LEAFLET MAP CREATION ---
+    function initMap() {
+      // Centered on Italy overview
+      map = L.map('map', { zoomControl: false }).setView([42.5000, 12.5000], 6);
+
+      // Add Zoom Control to bottom-left
+      L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+      // OpenStreetMap Tiles (Clean CartoDB style for professional look)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+        maxZoom: 19
+      }).addTo(map);
+
+      markersGroup = L.layerGroup().addTo(map);
+    }
+
+    // --- CUSTOM SVG IP MARKERS ---
+    function createIPMarkerIcon(station) {
+      const isCharge = station.isCharge;
+      const isHighway = station.highway;
+
+      let bgColor = "#0f2b5c"; // IP Blue
+      let iconSymbol = '<span style="font-weight:900; font-size:11px; color:#ffcc00;">IP</span>';
+
+      if (isCharge) {
+        bgColor = "#f59e0b"; // Amber for Charge
+        iconSymbol = '<i class="fa-solid fa-bolt" style="color:#ffffff; font-size:12px;"></i>';
+      } else if (isHighway) {
+        bgColor = "#059669"; // Emerald for Highway
+      }
+
+      const html = `
+        <div style="
+          background-color: ${bgColor};
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          border: 2px solid #ffffff;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        ">
+          ${iconSymbol}
+        </div>
+      `;
+
+      return L.divIcon({
+        html: html,
+        className: 'custom-ip-icon',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
+      });
+    }
+
+    // --- GEOLOCATION LOGIC ---
+    function getUserLocation(silent = false) {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            userCoords = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            };
+            updateUserMarker();
+            applyFilters();
+            map.setView([userCoords.lat, userCoords.lng], 12);
+          },
+          (error) => {
+            if (!silent) {
+              alert("Geolocalizzazione non disponibile o negata. Verrà utilizzata la posizione standard (Roma).");
+            }
+            updateUserMarker();
+            applyFilters();
+          }
+        );
+      } else {
+        updateUserMarker();
+        applyFilters();
+      }
+    }
+
+    function updateUserMarker() {
+      if (userMarker) map.removeLayer(userMarker);
+
+      const userIcon = L.divIcon({
+        className: 'user-location-marker',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+
+      userMarker = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon })
+        .addTo(map)
+        .bindPopup("<b>La tua Posizione</b>");
+    }
+
+    // --- CALCULATE HAVERSINE DISTANCE ---
+    function getDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371; // Radius of the earth in km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2); 
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+      return R * c;
+    }
+
+    // --- FILTER & SORT LOGIC ---
+    function applyFilters() {
+      const modeFilter = document.getElementById('select-mode').value;
+      const sortFilter = document.getElementById('select-sort').value;
+      const maxRadius = parseFloat(document.getElementById('radius-slider').value);
+
+      let result = rawStations.map(st => {
+        const dist = getDistanceKm(userCoords.lat, userCoords.lng, st.lat, st.lng);
+        return { ...st, distance: dist };
+      });
+
+      // 1. Filter by Search Tab Context
+      if (currentSearchTab === 'near') {
+        result = result.filter(st => st.distance <= maxRadius);
+      }
+
+      // 2. Filter by Fuel Type
+      if (activeFuel !== 'all') {
+        if (activeFuel === 'charge') {
+          result = result.filter(st => st.isCharge);
+        } else {
+          result = result.filter(st => st.prices[activeFuel] !== null && st.prices[activeFuel] !== undefined);
+        }
+      }
+
+      // 3. Filter by Mode (Self / Servito)
+      if (modeFilter !== 'all') {
+        result = result.filter(st => st.mode === modeFilter);
+      }
+
+      // 4. Sort Results
+      if (sortFilter === 'distance') {
+        result.sort((a, b) => a.distance - b.distance);
+      } else if (sortFilter === 'price_benzina') {
+        result.sort((a, b) => (a.prices.benzina || 99) - (b.prices.benzina || 99));
+      } else if (sortFilter === 'price_diesel') {
+        result.sort((a, b) => (a.prices.diesel || 99) - (b.prices.diesel || 99));
+      }
+
+      if (currentSearchTab === 'near' && result.length > 300) result = result.slice(0, 300);
+      displayedStations = result;
+      renderStationsList(result);
+      renderMapMarkers(result);
+      updateKPIs(result);
+    }
+
+    // --- RENDER STATIONS IN SIDEBAR ---
+    function renderStationsList(stations) {
+      const container = document.getElementById('list-container');
+      const mobileCount = document.getElementById('mobile-count');
+      mobileCount.innerText = stations.length;
+
+      if (stations.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-slate-400">
+            <i class="fa-solid fa-gas-pump text-4xl mb-2 opacity-40"></i>
+            <p class="text-xs font-semibold">Nessun distributore IP trovato</p>
+            <p class="text-[11px]">Prova ad aumentare il raggio o modificare i filtri.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = stations.map(st => {
+        const distText = st.distance ? `${st.distance.toFixed(1)} km` : '';
+
+        // Services icons generator
+        const serviceBadges = st.services.map(srv => {
+          if (srv === 'bar') return `<span title="Bar / Ristorante" class="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded"><i class="fa-solid fa-mug-hot"></i></span>`;
+          if (srv === 'h24') return `<span title="Aperto 24H" class="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-bold text-[9px]">24H</span>`;
+          if (srv === 'wash') return `<span title="Autolavaggio" class="text-cyan-600 bg-cyan-50 px-1.5 py-0.5 rounded"><i class="fa-solid fa-car-wash"></i></span>`;
+          if (srv === 'ippay') return `<span title="Pagamento via IP Pay App" class="text-ipBlue bg-blue-50 px-1.5 py-0.5 rounded font-extrabold text-[9px]">IP PAY</span>`;
+          if (srv === 'charge') return `<span title="Colonnina Elettrica IP Charge" class="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded"><i class="fa-solid fa-bolt"></i></span>`;
+          return '';
+        }).join(' ');
+
+        return `
+          <div onclick="focusStation('${st.id}')" class="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-ipBlue/40 hover:shadow-md transition cursor-pointer group">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <h4 class="font-bold text-slate-800 text-sm group-hover:text-ipBlue transition">${st.name}</h4>
+                  ${st.highway ? '<span class="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-1.5 py-0.2 rounded">Autostrada</span>' : ''}
+                </div>
+                <p class="text-xs text-slate-500 mt-0.5 line-clamp-1"><i class="fa-solid fa-location-dot text-slate-400 mr-1"></i>${st.address}</p>
+              </div>
+              ${distText ? `<span class="bg-slate-100 text-slate-600 text-[11px] font-bold px-2 py-0.5 rounded-md flex-shrink-0">${distText}</span>` : ''}
+            </div>
+
+            <!-- Prezzi Badges -->
+            <div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <div class="bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
+                  <span class="text-[10px] text-slate-400 font-medium block leading-none">Benzina</span>
+                  <span class="font-bold text-slate-800 text-xs">${st.prices.benzina ? st.prices.benzina.toFixed(3) + ' €' : '-'}</span>
+                </div>
+                <div class="bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
+                  <span class="text-[10px] text-slate-400 font-medium block leading-none">Diesel</span>
+                  <span class="font-bold text-slate-800 text-xs">${st.prices.diesel ? st.prices.diesel.toFixed(3) + ' €' : '-'}</span>
+                </div>
+                ${st.prices.gpl ? `
+                  <div class="bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
+                    <span class="text-[10px] text-slate-400 font-medium block leading-none">GPL</span>
+                    <span class="font-bold text-slate-800 text-xs">${st.prices.gpl.toFixed(3)} €</span>
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- Action button -->
+              <button onclick="event.stopPropagation(); navigateToStation(${st.lat}, ${st.lng})" class="bg-ipBlue hover:bg-ipBlueLight text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 shadow-sm">
+                <i class="fa-solid fa-diamond-turn-right text-ipYellow"></i>
+                <span>Naviga</span>
+              </button>
+            </div>
+
+            <!-- Servizi -->
+            <div class="mt-2 flex items-center gap-1 text-xs">
+              ${serviceBadges}
+              <span class="ml-auto text-[10px] text-slate-400 uppercase font-bold">${st.mode}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- RENDER MAP MARKERS ---
+    function renderMapMarkers(stations) {
+      markersGroup.clearLayers();
+
+      stations.forEach(st => {
+        const marker = L.marker([st.lat, st.lng], {
+          icon: createIPMarkerIcon(st)
+        });
+
+        // Popup Content Template
+        const popupHtml = `
+          <div class="p-3">
+            <div class="bg-ipBlue text-white p-2.5 -m-3 mb-2 flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="bg-ipYellow text-ipBlue font-black text-xs px-1.5 py-0.5 rounded">IP</span>
+                <span class="font-bold text-xs truncate max-w-[170px]">${st.name}</span>
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-500 mb-2 mt-3">${st.address}</p>
+
+            <div class="grid grid-cols-2 gap-1.5 text-xs mb-3">
+              <div class="bg-slate-100 p-1.5 rounded text-center">
+                <div class="text-[9px] text-slate-400 font-bold uppercase">Benzina</div>
+                <div class="font-extrabold text-slate-800">${st.prices.benzina ? st.prices.benzina.toFixed(3) + '€' : '-'}</div>
+              </div>
+              <div class="bg-slate-100 p-1.5 rounded text-center">
+                <div class="text-[9px] text-slate-400 font-bold uppercase">Diesel</div>
+                <div class="font-extrabold text-slate-800">${st.prices.diesel ? st.prices.diesel.toFixed(3) + '€' : '-'}</div>
+              </div>
+            </div>
+
+            <button onclick="navigateToStation(${st.lat}, ${st.lng})" class="w-full bg-ipYellow hover:bg-ipYellowHover text-ipBlue font-bold py-1.5 rounded text-xs transition flex items-center justify-center gap-1">
+              <i class="fa-solid fa-location-arrow"></i> Avvia Navigatore Google Maps
+            </button>
+          </div>
+        `;
+
+        marker.bindPopup(popupHtml);
+        marker.stationId = st.id;
+        markersGroup.addLayer(marker);
+      });
+    }
+
+    // --- FOCUS ON STATION FROM LIST CLICK ---
+    function focusStation(stationId) {
+      const station = rawStations.find(s => s.id === stationId);
+      if (!station) return;
+
+      map.setView([station.lat, station.lng], 14, { animate: true });
+
+      // Open corresponding popup
+      markersGroup.eachLayer(layer => {
+        if (layer.stationId === stationId) {
+          layer.openPopup();
+        }
+      });
+
+      // On mobile view, automatically switch to map tab
+      if (window.innerWidth < 768) {
+        switchMobileTab('map');
+      }
+    }
+
+    // --- OPEN GOOGLE MAPS ROUTE ---
+    function navigateToStation(lat, lng) {
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      window.open(url, '_blank');
+    }
+
+    // --- ROUTE SEARCH LOGIC (OSRM API Integration) ---
+    async function calculateRouteSearch() {
+      const startCity = document.getElementById('route-start').value.trim();
+      const endCity = document.getElementById('route-end').value.trim();
+
+      if (!startCity || !endCity) {
+        alert("Inserisci sia la città di partenza che quella di arrivo.");
+        return;
+      }
+
+      try {
+        // Geocoding Origin & Destination using Nominatim
+        const startRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=${encodeURIComponent(startCity + ', Italy')}`);
+        const startData = await startRes.json();
+
+        const endRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=${encodeURIComponent(endCity + ', Italy')}`);
+        const endData = await endRes.json();
+
+        if (startData.length === 0 || endData.length === 0) {
+          alert("Impossibile trovare una delle località inserite.");
+          return;
+        }
+
+        const startCoords = [parseFloat(startData[0].lon), parseFloat(startData[0].lat)];
+        const endCoords = [parseFloat(endData[0].lon), parseFloat(endData[0].lat)];
+
+        // OSRM Routing Call
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoords[0]},${startCoords[1]};${endCoords[0]},${endCoords[1]}?overview=full&geometries=geojson`;
+        const routeRes = await fetch(osrmUrl);
+        const routeData = await routeRes.json();
+
+        if (!routeData.routes || routeData.routes.length === 0) {
+          alert("Impossibile calcolare l'itinerario.");
+          return;
+        }
+
+        const routeGeometry = routeData.routes[0].geometry;
+
+        // Draw Polyline on Map
+        if (routePolyline) map.removeLayer(routePolyline);
+
+        const latLngs = routeGeometry.coordinates.map(coord => [coord[1], coord[0]]);
+        routePolyline = L.polyline(latLngs, { color: '#0f2b5c', weight: 5, opacity: 0.8, dashArray: '8, 8' }).addTo(map);
+
+        map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
+
+        // Filter Stations along route (Distance buffer simulation)
+        const passo = Math.max(1, Math.floor(latLngs.length / 400));
+        const punti = latLngs.filter((_, i) => i % passo === 0);
+        const stationsOnRoute = rawStations.filter(st =>
+          punti.some(p => getDistanceKm(p[0], p[1], st.lat, st.lng) <= 15)
+        );
+
+        currentSearchTab = 'route';
+        displayedStations = stationsOnRoute;
+        renderStationsList(stationsOnRoute);
+        renderMapMarkers(stationsOnRoute);
+        updateKPIs(stationsOnRoute);
+
+      } catch (err) {
+        console.error("Errore nel calcolo del percorso:", err);
+        alert("Si è verificato un errore durante la ricerca del tragitto.");
+      }
+    }
+
+    // --- SEARCH BY CITY ---
+    async function searchByCity() {
+      const cityQuery = document.getElementById('city-input').value.trim();
+      if (!cityQuery) return;
+
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q=${encodeURIComponent(cityQuery + ', Italy')}`);
+        const data = await res.json();
+
+        if (data.length > 0) {
+          userCoords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+          map.setView([userCoords.lat, userCoords.lng], 12);
+          updateUserMarker();
+          applyFilters();
+        } else {
+          alert("Città non trovata.");
+        }
+      } catch (e) {
+        alert("Errore durante la ricerca.");
+      }
+    }
+
+    // --- UI CONTROLS & TAB SWITCHING ---
+    function setSearchTab(tab) {
+      currentSearchTab = tab;
+      ['near', 'route', 'city'].forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        const panel = document.getElementById(`panel-${t}`);
+        if (t === tab) {
+          btn.className = "flex-1 py-2 rounded-lg font-semibold bg-ipBlue text-white shadow-sm transition flex items-center justify-center gap-1";
+          panel.classList.remove('hidden');
+        } else {
+          btn.className = "flex-1 py-2 rounded-lg text-slate-700 hover:text-ipBlue transition flex items-center justify-center gap-1";
+          panel.classList.add('hidden');
+        }
+      });
+
+      if (tab === 'near') applyFilters();
+    }
+
+    function setFuelFilter(type) {
+      activeFuel = type;
+      document.querySelectorAll('.fuel-btn').forEach(btn => {
+        btn.classList.remove('bg-ipBlue', 'text-white', 'border-ipBlue', 'active');
+        btn.classList.add('border-slate-300');
+      });
+
+      event.currentTarget.classList.add('bg-ipBlue', 'text-white', 'border-ipBlue', 'active');
+      event.currentTarget.classList.remove('border-slate-300');
+
+      applyFilters();
+    }
+
+    function toggleFilters() {
+      const box = document.getElementById('filter-box');
+      const chevron = document.getElementById('filter-chevron');
+      box.classList.toggle('hidden');
+      chevron.classList.toggle('rotate-180');
+    }
+
+    function updateRadiusLabel(val) {
+      document.getElementById('radius-val').innerText = `${val} km`;
+    }
+
+    function recenterMap() {
+      map.setView([userCoords.lat, userCoords.lng], 12, { animate: true });
+    }
+
+    function switchMobileTab(tab) {
+      const sidebar = document.getElementById('sidebar');
+      const mapContainer = document.getElementById('map-container');
+      const btnList = document.getElementById('btn-tab-list');
+      const btnMap = document.getElementById('btn-tab-map');
+
+      if (tab === 'list') {
+        sidebar.classList.remove('hidden');
+        mapContainer.classList.add('hidden');
+        btnList.className = "flex-1 py-2.5 text-center bg-white text-ipBlue border-b-2 border-ipBlue flex justify-center items-center gap-1.5";
+        btnMap.className = "flex-1 py-2.5 text-center flex justify-center items-center gap-1.5 text-slate-500";
+      } else {
+        sidebar.classList.add('hidden');
+        mapContainer.classList.remove('hidden');
+        btnMap.className = "flex-1 py-2.5 text-center bg-white text-ipBlue border-b-2 border-ipBlue flex justify-center items-center gap-1.5";
+        btnList.className = "flex-1 py-2.5 text-center flex justify-center items-center gap-1.5 text-slate-500";
+        setTimeout(() => map.invalidateSize(), 200);
+      }
+    }
+
+    function updateKPIs(stations) {
+      document.getElementById('kpi-count').innerText = stations.length;
+
+      const benzinaArr = stations.map(s => s.prices.benzina).filter(Boolean);
+      const dieselArr = stations.map(s => s.prices.diesel).filter(Boolean);
+
+      const avgBenzina = benzinaArr.length ? (benzinaArr.reduce((a,b)=>a+b,0)/benzinaArr.length).toFixed(3) : '-';
+      const avgDiesel = dieselArr.length ? (dieselArr.reduce((a,b)=>a+b,0)/dieselArr.length).toFixed(3) : '-';
+
+      document.getElementById('kpi-benzina').innerText = avgBenzina !== '-' ? `${avgBenzina} €` : '-';
+      document.getElementById('kpi-diesel').innerText = avgDiesel !== '-' ? `${avgDiesel} €` : '-';
+    }
+
+    function openDemoInfo() {
+      document.getElementById('demo-modal').classList.remove('hidden');
+    }
+
+    function closeDemoInfo() {
+      document.getElementById('demo-modal').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
