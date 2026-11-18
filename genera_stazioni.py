@@ -4,6 +4,7 @@ import csv
 import json
 import re
 import sys
+from collections import Counter
 from datetime import date
 
 FILE_ANAGRAFICA = "anagrafica_impianti_attivi.csv"
@@ -14,8 +15,14 @@ FILE_OUT = "stazioni.json"
 CARBURANTI = {"benzina": "benzina", "gasolio": "gasolio", "gpl": "gpl", "metano": "metano"}
 
 
+def e_ip(bandiera):
+    """True per 'Ip', 'IP', 'Api-Ip', 'Italiana Petroli'... ma non per 'Api' o 'Tamoil'."""
+    b = bandiera.strip().lower()
+    return bool(re.search(r"(^|[^a-z])ip([^a-z]|$)", b)) or "italiana petroli" in b
+
+
 def leggi_righe(percorso):
-    """Restituisce (prima_riga, lista_di_dizionari). Gestisce BOM e codifiche diverse."""
+    """Restituisce (prima_riga, intestazione, lista_di_dizionari)."""
     try:
         with open(percorso, encoding="utf-8-sig") as f:
             testo = f.read()
@@ -23,16 +30,25 @@ def leggi_righe(percorso):
         with open(percorso, encoding="latin-1") as f:
             testo = f.read()
     righe = testo.splitlines()
+    print(f"\n== {percorso}: {len(righe)} righe")
+    for r in righe[:3]:
+        print("   ", r[:200])
     prima = righe[0] if righe else ""
     # la prima riga è "Estrazione del ...", la seconda è l'intestazione
-    reader = csv.reader(righe[1:], delimiter=";", quoting=csv.QUOTE_NONE)
-    intestazione = [h.strip().lower() for h in next(reader)]
+    # (se la prima riga è già l'intestazione, la si usa)
+    inizio = 1 if prima.lower().startswith("estrazione") else 0
+    testa = righe[inizio]
+    sep = max(";,|\t", key=testa.count)
+    reader = csv.reader(righe[inizio + 1:], delimiter=sep, quoting=csv.QUOTE_NONE)
+    intestazione = [h.strip().lower() for h in testa.split(sep)]
+    print("    separatore:", repr(sep), "- colonne:", intestazione)
     dati = []
     for r in reader:
         if len(r) < len(intestazione):
             continue
         dati.append({intestazione[i]: r[i].strip() for i in range(len(intestazione))})
-    return prima, dati
+    print("    righe lette:", len(dati))
+    return prima, intestazione, dati
 
 
 def numero(testo):
@@ -53,16 +69,22 @@ def data_estrazione(riga):
 
 
 def main():
-    _, anagrafica = leggi_righe(FILE_ANAGRAFICA)
-    riga_prezzi, prezzi_righe = leggi_righe(FILE_PREZZI)
+    _, _, anagrafica = leggi_righe(FILE_ANAGRAFICA)
+    riga_prezzi, _, prezzi_righe = leggi_righe(FILE_PREZZI)
+
+    bandiere = Counter(a.get("bandiera", "?") for a in anagrafica)
+    print("\nBandiere più frequenti:", bandiere.most_common(15))
+    print("Bandiere riconosciute come IP:", {b: n for b, n in bandiere.items() if e_ip(b)})
 
     # 1) stazioni IP con coordinate valide (Italia)
     stazioni = {}
+    scartate_coordinate = 0
     for a in anagrafica:
-        if a.get("bandiera", "").strip().lower() != "ip":
+        if not e_ip(a.get("bandiera", "")):
             continue
         lat, lon = numero(a.get("latitudine")), numero(a.get("longitudine"))
         if lat is None or lon is None or not (35 <= lat <= 48 and 6 <= lon <= 19):
+            scartate_coordinate += 1
             continue
         stazioni[a["idimpianto"]] = {
             "id": a["idimpianto"],
@@ -74,6 +96,7 @@ def main():
             "lo": round(lon, 6),
             "pr": {},
         }
+    print("Stazioni IP scartate per coordinate non valide:", scartate_coordinate)
 
     # 2) prezzi: per ogni carburante [self, servito]
     for p in prezzi_righe:
@@ -95,7 +118,7 @@ def main():
     with open(FILE_OUT, "w", encoding="utf-8") as f:
         json.dump({"aggiornato": data_estrazione(riga_prezzi), "stazioni": elenco},
                   f, ensure_ascii=False, separators=(",", ":"))
-    print(f"Stazioni IP trovate: {len(stazioni)} - con prezzi: {len(elenco)}")
+    print(f"\nStazioni IP trovate: {len(stazioni)} - con prezzi: {len(elenco)}")
     if not elenco:
         sys.exit("ERRORE: nessuna stazione IP trovata, controlla i file CSV.")
 
