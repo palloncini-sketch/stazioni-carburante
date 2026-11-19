@@ -1,0 +1,22 @@
+name: Test fonte benzina-data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Elenca i file e mostra il piu recente
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "--- Cartelle in data ---"
+          gh api repos/LucaDDDD/benzina-data/contents/data --jq '.[].name'
+          echo "--- File in data/2026/11 ---"
+          gh api repos/LucaDDDD/benzina-data/contents/data/2026/11 --jq '.[].name'
+          ULTIMO=$(gh api repos/LucaDDDD/benzina-data/contents/data/2026/11 --jq '.[].name' | grep prezzo_alle_8 | sort | tail -n 1)
+          echo "--- Piu recente: $ULTIMO ---"
+          curl -s -L -o ultimo.csv.gz "https://raw.githubusercontent.com/LucaDDDD/benzina-data/main/data/2026/11/$ULTIMO"
+          ls -lh ultimo.csv.gz
+          gunzip -c ultimo.csv.gz | head -n 4
